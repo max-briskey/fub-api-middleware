@@ -1,9 +1,14 @@
 from flask import Flask, request, jsonify
-import requests
+import os, requests
 
 app = Flask(__name__)
 
-# 🔑 YOUR FUB API KEY (replace this with an env var in prod!)
+# Health‑check / home route so GET / and HEAD / return 200
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "FUB API Middleware is running"}), 200
+
+# 🔑 YOUR FUB API KEY (in prod, move this into an env var)
 FUB_API_KEY = "fka_0RfpO2PZlvdufhuu6AP92YRoBbGHHIHJbF"
 HEADERS = {"Authorization": f"Bearer {FUB_API_KEY}"}
 
@@ -45,18 +50,15 @@ def get_appointments():
 
 @app.route('/get_appointments_report', methods=['GET'])
 def get_appointments_report():
-    # fetch raw appointments
     params = {"start": request.args['start'], "end": request.args['end']}
     data = requests.get("https://api.followupboss.com/v1/appointments", headers=HEADERS, params=params).json()
-    # aggregate by agent & outcome
     report = {}
     for appt in data.get("appointments", []):
         agent = appt.get("assignedAgent", {}).get("id")
-        name = appt.get("assignedAgent", {}).get("name")
+        name  = appt.get("assignedAgent", {}).get("name")
         outcome = appt.get("outcome") or "unknown"
         key = (agent, name, outcome)
         report[key] = report.get(key, 0) + 1
-    # build response
     out = []
     for (agent_id, agent_name, outcome), count in report.items():
         out.append({
@@ -94,7 +96,7 @@ def get_notes():
 def get_events():
     params = {
         "start": request.args.get("start"),
-        "end": request.args.get("end")
+        "end":   request.args.get("end")
     }
     resp = requests.get("https://api.followupboss.com/v1/events", headers=HEADERS, params=params)
     return jsonify(resp.json())
