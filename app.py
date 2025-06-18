@@ -4,7 +4,7 @@ import os
 
 app = Flask(__name__)
 
-FUB_API_KEY = os.environ.get("FUB_API_KEY")
+FUB_API_KEY = os.environ.get("fka_0RfpO2eXqgS4eywqA4890u5kUAfcYksP1B")
 HEADERS = {"Authorization": f"Bearer {FUB_API_KEY}"}
 
 @app.route('/')
