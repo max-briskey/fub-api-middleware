@@ -9,7 +9,7 @@ def home():
     return jsonify({"status": "FUB API Middleware is running"}), 200
 
 # 🔑 YOUR FUB API KEY (in prod, move this into an env var)
-FUB_API_KEY = "fka_0RfpO2325NCCe1JKKJ8TaFyPJBRunm6JUN"
+FUB_API_KEY = os.getenv("FUB_API_KEY")
 HEADERS = {"Authorization": f"Bearer {FUB_API_KEY}"}
 
 # ──────────────── CONTACTS / LEADS ─────────────────
