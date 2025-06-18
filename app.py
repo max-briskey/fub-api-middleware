@@ -113,3 +113,12 @@ def get_users():
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)), debug=True)
 
+# TEST
+
+@app.route('/debug_token', methods=['GET'])
+def debug_token():
+    import os
+    token = os.getenv("FUB_API_KEY")
+    return jsonify({"loaded_token": token})
+
+
