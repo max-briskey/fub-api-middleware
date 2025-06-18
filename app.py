@@ -4,7 +4,7 @@ import requests
 app = Flask(__name__)
 
 # 🔑 YOUR FUB API KEY (replace this with an env var in prod!)
-FUB_API_KEY = "fka_0RfpO2eXqgS4eywqA4890u5kUAfcYksP1B"
+FUB_API_KEY = "fka_0RfpO2PZlvdufhuu6AP92YRoBbGHHIHJbF"
 HEADERS = {"Authorization": f"Bearer {FUB_API_KEY}"}
 
 # ──────────────── CONTACTS / LEADS ─────────────────
