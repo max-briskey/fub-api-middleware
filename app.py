@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os, requests
+from requests.auth import HTTPBasicAuth
 
 app = Flask(__name__)
 
@@ -8,20 +9,20 @@ app = Flask(__name__)
 def home():
     return jsonify({"status": "FUB API Middleware is running"}), 200
 
-# 🔑 YOUR FUB API KEY (in prod, move this into an env var)
+# 🔑 FUB API Auth using Basic Authentication
 FUB_API_KEY = os.getenv("FUB_API_KEY")
-HEADERS = {"Authorization": f"Bearer {FUB_API_KEY}"}
+FUB_AUTH = HTTPBasicAuth(FUB_API_KEY, "")
 
 # ──────────────── CONTACTS / LEADS ─────────────────
 
 @app.route('/get_contacts', methods=['GET'])
 def get_contacts():
-    resp = requests.get("https://api.followupboss.com/v1/people", headers=HEADERS)
+    resp = requests.get("https://api.followupboss.com/v1/people", auth=FUB_AUTH)
     return jsonify(resp.json())
 
 @app.route('/get_lead/<lead_id>', methods=['GET'])
 def get_lead(lead_id):
-    resp = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}", headers=HEADERS)
+    resp = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}", auth=FUB_AUTH)
     return jsonify(resp.json())
 
 # ──────────────── TASKS ─────────────────
@@ -32,7 +33,7 @@ def get_tasks():
         "status": request.args.get("status"),
         "assignedTo": request.args.get("assignedTo")
     }
-    resp = requests.get("https://api.followupboss.com/v1/tasks", headers=HEADERS, params=params)
+    resp = requests.get("https://api.followupboss.com/v1/tasks", auth=FUB_AUTH, params=params)
     return jsonify(resp.json())
 
 # ──────────────── APPOINTMENTS ─────────────────
@@ -45,13 +46,13 @@ def get_appointments():
         "agent_id": request.args.get("agent_id"),
         "outcome": request.args.get("outcome")
     }
-    resp = requests.get("https://api.followupboss.com/v1/appointments", headers=HEADERS, params=params)
+    resp = requests.get("https://api.followupboss.com/v1/appointments", auth=FUB_AUTH, params=params)
     return jsonify(resp.json())
 
 @app.route('/get_appointments_report', methods=['GET'])
 def get_appointments_report():
     params = {"start": request.args['start'], "end": request.args['end']}
-    data = requests.get("https://api.followupboss.com/v1/appointments", headers=HEADERS, params=params).json()
+    data = requests.get("https://api.followupboss.com/v1/appointments", auth=FUB_AUTH, params=params).json()
     report = {}
     for appt in data.get("appointments", []):
         agent = appt.get("assignedAgent", {}).get("id")
@@ -72,14 +73,14 @@ def get_appointments_report():
 
 @app.route('/get_deals', methods=['GET'])
 def get_deals():
-    resp = requests.get("https://api.followupboss.com/v1/deals", headers=HEADERS)
+    resp = requests.get("https://api.followupboss.com/v1/deals", auth=FUB_AUTH)
     return jsonify(resp.json())
 
 # ──────────────── LEAD SOURCES ─────────────────
 
 @app.route('/get_lead_sources', methods=['GET'])
 def get_lead_sources():
-    resp = requests.get("https://api.followupboss.com/v1/people/sources", headers=HEADERS)
+    resp = requests.get("https://api.followupboss.com/v1/people/sources", auth=FUB_AUTH)
     return jsonify(resp.json())
 
 # ──────────────── NOTES ─────────────────
@@ -87,7 +88,7 @@ def get_lead_sources():
 @app.route('/get_notes', methods=['GET'])
 def get_notes():
     lead_id = request.args['lead_id']
-    resp = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", headers=HEADERS)
+    resp = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", auth=FUB_AUTH)
     return jsonify(resp.json())
 
 # ──────────────── EVENTS ─────────────────
@@ -98,27 +99,24 @@ def get_events():
         "start": request.args.get("start"),
         "end":   request.args.get("end")
     }
-    resp = requests.get("https://api.followupboss.com/v1/events", headers=HEADERS, params=params)
+    resp = requests.get("https://api.followupboss.com/v1/events", auth=FUB_AUTH, params=params)
     return jsonify(resp.json())
 
 # ──────────────── USERS ─────────────────
 
 @app.route('/get_users', methods=['GET'])
 def get_users():
-    resp = requests.get("https://api.followupboss.com/v1/users", headers=HEADERS)
+    resp = requests.get("https://api.followupboss.com/v1/users", auth=FUB_AUTH)
     return jsonify(resp.json())
+
+# ──────────────── DEBUG TOKEN ─────────────────
+
+@app.route('/debug_token', methods=['GET'])
+def debug_token():
+    token = os.getenv("FUB_API_KEY")
+    return jsonify({"loaded_token": token[:8] + "...", "length": len(token) if token else 0})
 
 # ──────────────── RUN ─────────────────
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)), debug=True)
-
-# TEST
-
-@app.route('/debug_token', methods=['GET'])
-def debug_token():
-    import os
-    token = os.getenv("FUB_API_KEY")
-    return jsonify({"loaded_token": token})
-
-
