@@ -58,7 +58,20 @@ def embedded_app():
 # ─── FUB Middleware Endpoints ────────────────────────────────────
 @app.route('/get_users', methods=['GET'])
 def get_users():
-    return jsonify(requests.get("https://api.followupboss.com/v1/users", auth=FUB_AUTH).json())
+    """
+    GET /get_users — returns all users via pagination
+    """
+    url = "https://api.followupboss.com/v1/users"
+    all_users = []
+    while url:
+        resp = requests.get(url, auth=FUB_AUTH)
+        data = resp.json()
+        # Append users
+        all_users.extend(data.get('users', []))
+        # Check for next page
+        meta = data.get('_metadata', {})
+        url = meta.get('nextLink')
+    return jsonify({'users': all_users})
 
 @app.route('/get_contacts', methods=['GET'])
 def get_contacts():
@@ -191,7 +204,6 @@ def get_all_calendar_events():
             all_events.append(e)
     return jsonify({"allCalendarAppointments": all_events})
 
-# ─── Remaining FUB Endpoints ─────────────────────────────────────
 @app.route('/get_deals', methods=['GET'])
 def get_deals():
     return jsonify(requests.get("https://api.followupboss.com/v1/deals", auth=FUB_AUTH).json())
