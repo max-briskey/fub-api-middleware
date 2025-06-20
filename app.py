@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, abort, redirect, session, url_for
-import os, requests, base64, json, hmac, hashlib
+import os, requests, base64, json, hmac, hashlib, secrets
 from requests.auth import HTTPBasicAuth
 
 # Google OAuth libraries
@@ -10,9 +10,8 @@ from google.auth.transport.requests import Request as GoogleRequest
 
 # Initialize Flask
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET")  # Set this in Render env vars
-if not app.secret_key:
-    raise RuntimeError("FLASK_SECRET not set")
+# Use provided FLASK_SECRET or generate a random one
+app.secret_key = os.getenv("FLASK_SECRET") or secrets.token_hex(16)
 app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
@@ -48,7 +47,6 @@ def embedded_app():
     signature   = request.args.get('signature', '')
     if not verify_fub_request(context_b64, signature):
         abort(403, "Invalid FUB signature")
-    # Decode context
     padding = '=' * (-len(context_b64) % 4)
     try:
         raw = base64.urlsafe_b64decode(context_b64 + padding)
@@ -69,7 +67,6 @@ def fub_get_paginated(path):
         r = requests.get(url, auth=FUB_AUTH)
         r.raise_for_status()
         data = r.json()
-        # path 'users' returns 'users', others return top-level arrays
         key = 'users' if 'users' in data else next((k for k in data if isinstance(data[k], list)), None)
         items.extend(data.get(key, []))
         url = data.get('_metadata', {}).get('nextLink')
@@ -129,8 +126,7 @@ def get_appointments_report():
 # ─── Google OAuth Calendar Integration ───────────────────────────
 TOKENS_FILE = 'tokens.json'
 def load_tokens():
-    if os.path.exists(TOKENS_FILE): return json.load(open(TOKENS_FILE))
-    return {}
+    return json.load(open(TOKENS_FILE)) if os.path.exists(TOKENS_FILE) else {}
 def save_tokens(tokens):
     json.dump(tokens, open(TOKENS_FILE, 'w'))
 
@@ -140,10 +136,7 @@ SECRETS_FILE = os.getenv('GOOGLE_CLIENT_SECRETS_FILE', 'credentials.json')
 @app.route('/auth/google', methods=['GET'])
 def auth_google():
     user_id = request.args.get('user_id') or abort(400, 'Missing user_id')
-    flow = Flow.from_client_secrets_file(
-        SECRETS_FILE, scopes=SCOPES,
-        redirect_uri=url_for('oauth2callback', _external=True)
-    )
+    flow = Flow.from_client_secrets_file(SECRETS_FILE, scopes=SCOPES, redirect_uri=url_for('oauth2callback', _external=True))
     auth_url, state = flow.authorization_url(prompt='consent', include_granted_scopes=True)
     session['state'] = state
     session['user_id'] = user_id
@@ -153,10 +146,7 @@ def auth_google():
 def oauth2callback():
     state = session.get('state'); user_id = session.get('user_id')
     if not state or not user_id: abort(400, 'OAuth session error')
-    flow = Flow.from_client_secrets_file(
-        SECRETS_FILE, scopes=SCOPES,
-        state=state, redirect_uri=url_for('oauth2callback', _external=True)
-    )
+    flow = Flow.from_client_secrets_file(SECRETS_FILE, scopes=SCOPES, state=state, redirect_uri=url_for('oauth2callback', _external=True))
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
     tokens = load_tokens()
@@ -178,7 +168,7 @@ def get_calendar_events():
     tokens = load_tokens().get(user_id) or abort(404,'Not connected')
     creds = Credentials(**tokens)
     if creds.expired and creds.refresh_token:
-        creds.refresh(GoogleRequest()); tokens['token']=creds.token; save_tokens({user_id:tokens})
+        creds.refresh(GoogleRequest()); tokens['token']=creds.token; save_tokens(load_tokens())
     service = build('calendar','v3',credentials=creds)
     events = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
     return jsonify({'calendarAppointments': events})
@@ -186,11 +176,11 @@ def get_calendar_events():
 @app.route('/get_all_calendar_events', methods=['GET'])
 def get_all_calendar_events():
     start = request.args.get('start'); end = request.args.get('end') or abort(400,'Missing start/end')
-    all_tokens = load_tokens(); all_events=[]
-    for uid, tok in all_tokens.items():
+    tokens = load_tokens(); all_events=[]
+    for uid, tok in tokens.items():
         creds = Credentials(**tok)
         if creds.expired and creds.refresh_token:
-            creds.refresh(GoogleRequest()); tok['token']=creds.token; save_tokens(all_tokens)
+            creds.refresh(GoogleRequest()); tok['token']=creds.token; save_tokens(tokens)
         service = build('calendar','v3',credentials=creds)
         items = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
         for e in items: e['fub_user_id']=uid; all_events.append(e)
@@ -208,8 +198,7 @@ def get_lead_sources():
 @app.route('/get_notes', methods=['GET'])
 def get_notes():
     lead_id = request.args.get('lead_id') or abort(400,'Missing lead_id')
-    r = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", auth=FUB_AUTH)
-    r.raise_for_status(); return jsonify(r.json())
+    r = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", auth=FUB_AUTH); r.raise_for_status(); return jsonify(r.json())
 
 @app.route('/get_events', methods=['GET'])
 def get_events():
