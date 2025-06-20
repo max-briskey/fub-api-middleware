@@ -9,7 +9,7 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request as GoogleRequest
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET") or "dev-secret"
+app.secret_key = os.getenv("FLASK_SECRET", "dev-secret")
 
 # ─── Health Check ───────────────────────────────────────────────
 @app.route('/', methods=['GET'])
@@ -58,19 +58,13 @@ def embedded_app():
 # ─── FUB Middleware Endpoints ────────────────────────────────────
 @app.route('/get_users', methods=['GET'])
 def get_users():
-    """
-    GET /get_users — returns all users via pagination
-    """
     url = "https://api.followupboss.com/v1/users"
     all_users = []
     while url:
         resp = requests.get(url, auth=FUB_AUTH)
         data = resp.json()
-        # Append users
         all_users.extend(data.get('users', []))
-        # Check for next page
-        meta = data.get('_metadata', {})
-        url = meta.get('nextLink')
+        url = data.get('_metadata', {}).get('nextLink')
     return jsonify({'users': all_users})
 
 @app.route('/get_contacts', methods=['GET'])
@@ -91,9 +85,7 @@ def get_appointments():
     start = request.args.get('start'); end = request.args.get('end')
     if not start or not end:
         abort(400, description="Missing required parameters: start and end")
-    params = {"start": start, "end": end,
-              "agent_id": request.args.get("agent_id"),
-              "outcome":  request.args.get("outcome")}
+    params = {"start": start, "end": end, "agent_id": request.args.get("agent_id"), "outcome": request.args.get("outcome")}
     return jsonify(requests.get("https://api.followupboss.com/v1/appointments", auth=FUB_AUTH, params=params).json())
 
 @app.route('/get_appointments_report', methods=['GET'])
@@ -107,10 +99,10 @@ def get_appointments_report():
         ag = appt.get("assignedAgent", {})
         key = (ag.get("id"), ag.get("name"), appt.get("outcome") or "unknown")
         report[key] = report.get(key, 0) + 1
-    out = [{"agent": {"id": aid, "name": nm}, "outcome": oc, "count": ct} for (aid,nm,oc), ct in report.items()]
+    out = [{"agent": {"id": aid, "name": nm}, "outcome": oc, "count": ct} for (aid, nm, oc), ct in report.items()]
     return jsonify({"report": out})
 
-# ─── Calendar Sync via Google OAuth ──────────────────────────────
+# ─── Google OAuth Calendar Integration ───────────────────────────
 TOKENS_FILE = 'tokens.json'
 def load_tokens():
     try:
@@ -120,14 +112,18 @@ def load_tokens():
 def save_tokens(tokens):
     json.dump(tokens, open(TOKENS_FILE, 'w'))
 
-GOOGLE_CLIENT_CONFIG = json.loads(os.getenv("GOOGLE_OAUTH_CONFIG_JSON", "{}"))
+# Wrap config in 'web' or 'installed' if needed
+raw_config = json.loads(os.getenv("GOOGLE_OAUTH_CONFIG_JSON", "{}"))
+if 'web' not in raw_config and 'installed' not in raw_config:
+    GOOGLE_CLIENT_CONFIG = {'web': raw_config}
+else:
+    GOOGLE_CLIENT_CONFIG = raw_config
+
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 @app.route('/auth/google', methods=['GET'])
 def auth_google():
-    user_id = request.args.get('user_id')
-    if not user_id:
-        abort(400, "Missing user_id parameter")
+    user_id = request.args.get('user_id') or abort(400, "Missing user_id parameter")
     flow = Flow.from_client_config(GOOGLE_CLIENT_CONFIG, SCOPES,
                                    redirect_uri=url_for('oauth2callback', _external=True))
     auth_url, state = flow.authorization_url(prompt='consent', include_granted_scopes=True)
@@ -159,49 +155,31 @@ def oauth2callback():
 
 @app.route('/get_calendar_events', methods=['GET'])
 def get_calendar_events():
-    user_id = request.args.get('user_id')
-    start   = request.args.get('start')
-    end     = request.args.get('end')
+    user_id = request.args.get('user_id'); start = request.args.get('start'); end = request.args.get('end')
     if not (user_id and start and end):
         abort(400, "Require user_id, start, end")
-    tokens = load_tokens()
-    user_tokens = tokens.get(user_id)
-    if not user_tokens:
-        abort(404, "User not connected to Google Calendar")
+    tokens = load_tokens(); user_tokens = tokens.get(user_id) or abort(404, "User not connected to Google Calendar")
     creds = Credentials(**user_tokens)
     if creds.expired and creds.refresh_token:
-        creds.refresh(GoogleRequest())
-        user_tokens['token'] = creds.token
-        save_tokens(tokens)
+        creds.refresh(GoogleRequest()); user_tokens['token'] = creds.token; save_tokens(tokens)
     service = build('calendar', 'v3', credentials=creds)
-    events = service.events().list(
-        calendarId='primary', timeMin=start, timeMax=end,
-        singleEvents=True, orderBy='startTime'
-    ).execute().get('items', [])
+    events = service.events().list(calendarId='primary', timeMin=start, timeMax=end,
+                                   singleEvents=True, orderBy='startTime').execute().get('items', [])
     return jsonify({"calendarAppointments": events})
 
-# ─── Aggregated Calendar Appointments ─────────────────────────────
 @app.route('/get_all_calendar_events', methods=['GET'])
 def get_all_calendar_events():
-    start = request.args.get('start'); end = request.args.get('end')
-    if not start or not end:
-        abort(400, "Missing required parameters: start and end")
-    tokens = load_tokens()
-    all_events = []
+    start = request.args.get('start'); end = request.args.get('end') or abort(400, "Missing required parameters: start and end")
+    tokens = load_tokens(); all_events = []
     for user_id, user_tokens in tokens.items():
         creds = Credentials(**user_tokens)
         if creds.expired and creds.refresh_token:
-            creds.refresh(GoogleRequest())
-            tokens[user_id]['token'] = creds.token
-            save_tokens(tokens)
+            creds.refresh(GoogleRequest()); tokens[user_id]['token'] = creds.token; save_tokens(tokens)
         service = build('calendar', 'v3', credentials=creds)
-        events = service.events().list(
-            calendarId='primary', timeMin=start, timeMax=end,
-            singleEvents=True, orderBy='startTime'
-        ).execute().get('items', [])
+        events = service.events().list(calendarId='primary', timeMin=start, timeMax=end,
+                                       singleEvents=True, orderBy='startTime').execute().get('items', [])
         for e in events:
-            e['fub_user_id'] = user_id
-            all_events.append(e)
+            e['fub_user_id'] = user_id; all_events.append(e)
     return jsonify({"allCalendarAppointments": all_events})
 
 @app.route('/get_deals', methods=['GET'])
@@ -214,16 +192,13 @@ def get_lead_sources():
 
 @app.route('/get_notes', methods=['GET'])
 def get_notes():
-    lead_id = request.args.get('lead_id')
-    if not lead_id:
-        abort(400, "Missing required parameter: lead_id")
+    lead_id = request.args.get('lead_id') or abort(400, "Missing required parameter: lead_id")
     return jsonify(requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", auth=FUB_AUTH).json())
 
 @app.route('/get_events', methods=['GET'])
 def get_events():
     return jsonify(requests.get(
-        "https://api.followupboss.com/v1/events",
-        auth=FUB_AUTH,
+        "https://api.followupboss.com/v1/events", auth=FUB_AUTH,
         params={"start": request.args.get('start'), "end": request.args.get('end')}
     ).json())
 
@@ -232,5 +207,4 @@ def debug_token():
     return jsonify({"loaded_token": FUB_API_KEY[:8] + '...', "length": len(FUB_API_KEY)})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)), debug=True)
