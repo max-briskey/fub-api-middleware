@@ -1,4 +1,3 @@
-```python
 from flask import Flask, request, jsonify, abort, redirect, session, url_for
 import os, requests, base64, json, hmac, hashlib, secrets
 from requests.auth import HTTPBasicAuth
@@ -11,7 +10,6 @@ from google.auth.transport.requests import Request as GoogleRequest
 
 # Initialize Flask
 app = Flask(__name__)
-# Use provided FLASK_SECRET or generate a random one
 app.secret_key = os.getenv("FLASK_SECRET") or secrets.token_hex(16)
 app.config.update(
     SESSION_COOKIE_SECURE=True,
@@ -138,7 +136,7 @@ SECRETS_FILE = os.getenv('GOOGLE_CLIENT_SECRETS_FILE', 'credentials.json')
 def auth_google():
     user_id = request.args.get('user_id') or abort(400, 'Missing user_id')
     flow = Flow.from_client_secrets_file(SECRETS_FILE, scopes=SCOPES, redirect_uri=url_for('oauth2callback', _external=True))
-    auth_url, state = flow.authorization_url(prompt='consent', include_granted_scopes=True)
+    auth_url, state = flow.authorization_url(prompt='consent')
     session['state'] = state
     session['user_id'] = user_id
     return redirect(auth_url)
@@ -169,7 +167,7 @@ def get_calendar_events():
     tokens = load_tokens().get(user_id) or abort(404,'Not connected')
     creds = Credentials(**tokens)
     if creds.expired and creds.refresh_token:
-        creds.refresh(GoogleRequest()); tokens['token']=creds.token; save_tokens(load_tokens())
+        creds.refresh(GoogleRequest()); tokens['token']=creds.token; save_tokens({user_id:tokens})
     service = build('calendar','v3',credentials=creds)
     events = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
     return jsonify({'calendarAppointments': events})
@@ -187,7 +185,6 @@ def get_all_calendar_events():
         for e in items: e['fub_user_id']=uid; all_events.append(e)
     return jsonify({'allCalendarAppointments': all_events})
 
-# ─── Remaining FUB Endpoints ─────────────────────────────────────
 @app.route('/get_deals', methods=['GET'])
 def get_deals():
     r = requests.get("https://api.followupboss.com/v1/deals", auth=FUB_AUTH); r.raise_for_status(); return jsonify(r.json())
@@ -211,4 +208,3 @@ def debug_token():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT',10000)); app.run(host='0.0.0.0', port=port)
-```
