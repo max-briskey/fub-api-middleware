@@ -4,7 +4,7 @@ from requests.auth import HTTPBasicAuth
 
 app = Flask(__name__)
 
-# ─── Home / Health Check ────────────────────
+# ─── Home / Health Check ───────────────────
 @app.route('/', methods=['GET'])
 def home():
     return jsonify({"status": "FUB API Middleware is running"}), 200
