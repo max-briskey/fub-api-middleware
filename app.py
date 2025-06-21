@@ -186,5 +186,49 @@ def get_calendar_events():
     if creds.expired and creds.refresh_token:
         creds.refresh(GoogleRequest()); tokens['token'] = creds.token; save_tokens(tokens)
     service = build('calendar', 'v3', credentials=creds)
-    items = service.events
+    items = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
+    return jsonify({'calendarAppointments': items})
 
+@app.route('/get_all_calendar_events', methods=['GET'])
+def get_all_calendar_events():
+    start = request.args.get('start'); end = request.args.get('end') or abort(400, 'Missing start/end')
+    tokens_map = load_tokens(); all_events = []
+    for uid, tok in tokens_map.items():
+        creds = Credentials(**tok)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(GoogleRequest()); tok['token'] = creds.token; save_tokens(tokens_map)
+        service = build('calendar', 'v3', credentials=creds)
+        events = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
+        for e in events:
+            e['fub_user_id'] = uid
+            all_events.append(e)
+    return jsonify({'allCalendarAppointments': all_events})
+
+@app.route('/debug_token', methods=['GET'])
+def debug_token():
+    return jsonify({'loaded_token': FUB_API_KEY[:8] + '...', 'length': len(FUB_API_KEY)})
+
+@app.route('/debug_oauth', methods=['GET'])
+def debug_oauth():
+    return jsonify({
+        'OAUTH_REDIRECT_URI': REDIRECT_URI,
+        'GOOGLE_CLIENT_SECRETS_FILE': SECRETS_FILE,
+        'ENV_VARS': {
+            'FUB_API_KEY': bool(os.getenv('FUB_API_KEY')),
+            'FUB_APP_SECRET': bool(os.getenv('FUB_APP_SECRET')),
+            'FLASK_SECRET': bool(os.getenv('FLASK_SECRET'))
+        }
+    })
+
+@app.route('/dump_credentials', methods=['GET'])
+def dump_credentials():
+    try:
+        creds = json.load(open(SECRETS_FILE))
+        tokens = load_tokens()
+        return jsonify({'credentials': creds, 'tokens': tokens})
+    except Exception as e:
+        return jsonify({'error': 'dump_failed', 'message': str(e)}), 500
+
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
