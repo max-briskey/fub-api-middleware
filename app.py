@@ -154,9 +154,17 @@ def auth_google():
 
 @app.route('/oauth2callback', methods=['GET'])
 def oauth2callback():
-    state = session.get('state'); user_id = session.get('user_id')
-    if not state or not user_id: abort(400, 'OAuth session error')
-    flow = Flow.from_client_secrets_file(SECRETS_FILE, scopes=SCOPES, state=state, redirect_uri=url_for('oauth2callback', _external=True))
+    state = session.get('state')
+    user_id = session.get('user_id')
+    if not state or not user_id:
+        abort(400, 'OAuth session error')
+    # Use the same redirect URI as auth step to avoid mismatch
+    flow = Flow.from_client_secrets_file(
+        SECRETS_FILE,
+        scopes=SCOPES,
+        state=state,
+        redirect_uri=REDIRECT_URI
+    )
     flow.fetch_token(authorization_response=request.url)
     creds = flow.credentials
     tokens = load_tokens()
@@ -169,7 +177,7 @@ def oauth2callback():
         'scopes': creds.scopes
     }
     save_tokens(tokens)
-    return jsonify({'status':'connected','user_id':user_id})
+    return jsonify({'status': 'connected', 'user_id': user_id})
 
 @app.route('/get_calendar_events', methods=['GET'])
 def get_calendar_events():
