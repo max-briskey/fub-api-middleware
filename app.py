@@ -226,4 +226,18 @@ def debug_token():
     return jsonify({'loaded_token':FUB_API_KEY[:8]+'...', 'length':len(FUB_API_KEY)})
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT',10000)); app.run(host='0.0.0.0', port=port)
+    # Debug endpoints to verify environment
+    @app.route('/debug_oauth', methods=['GET'])
+    def debug_oauth():
+        return jsonify({
+            'OAUTH_REDIRECT_URI': REDIRECT_URI,
+            'GOOGLE_CLIENT_SECRETS_FILE': SECRETS_FILE,
+            'ENV_VARS': {
+                'FUB_API_KEY': bool(os.getenv('FUB_API_KEY')),
+                'FUB_APP_SECRET': bool(os.getenv('FUB_APP_SECRET')),
+                'FLASK_SECRET': bool(os.getenv('FLASK_SECRET'))
+            }
+        })
+
+    port = int(os.getenv('PORT',10000))
+    app.run(host='0.0.0.0', port=port)
