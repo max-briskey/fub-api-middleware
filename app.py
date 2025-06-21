@@ -123,6 +123,13 @@ def get_appointments_report():
     return jsonify({"report": out})
 
 # ─── Google OAuth Calendar Integration ───────────────────────────
+# Redirect URI must exactly match the one configured in Google Cloud Console
+REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI')
+if not REDIRECT_URI:
+    raise RuntimeError("OAUTH_REDIRECT_URI environment variable not set; must match your OAuth client redirect URI")
+
+TOKENS_FILE = 'tokens.json'
+
 TOKENS_FILE = 'tokens.json'
 def load_tokens():
     return json.load(open(TOKENS_FILE)) if os.path.exists(TOKENS_FILE) else {}
