@@ -8,6 +8,10 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request as GoogleRequest
 
+import os
+# Allow OAuth 2.0 on HTTPS-terminated load balancers (Render) by enabling insecure transport
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 # Initialize Flask
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET") or secrets.token_hex(16)
