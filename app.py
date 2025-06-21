@@ -142,7 +142,11 @@ SECRETS_FILE = os.getenv('GOOGLE_CLIENT_SECRETS_FILE', 'credentials.json')
 @app.route('/auth/google', methods=['GET'])
 def auth_google():
     user_id = request.args.get('user_id') or abort(400, 'Missing user_id')
-    flow = Flow.from_client_secrets_file(SECRETS_FILE, scopes=SCOPES, redirect_uri=url_for('oauth2callback', _external=True))
+    flow = Flow.from_client_secrets_file(
+        SECRETS_FILE,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
     auth_url, state = flow.authorization_url(prompt='consent')
     session['state'] = state
     session['user_id'] = user_id
