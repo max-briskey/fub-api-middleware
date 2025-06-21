@@ -119,7 +119,7 @@ def get_appointments_report():
         ag = appt.get('assignedAgent', {})
         key = (ag.get('id'), ag.get('name'), appt.get('outcome') or 'unknown')
         report[key] = report.get(key, 0) + 1
-    out = [{"agent": {"id": aid, "name": nm}, "outcome": oc, "count": ct} for (aid,nm,oc), ct in report.items()]
+    out = [{"agent": {"id": aid, "name": nm}, "outcome": oc, "count": ct} for (aid, nm, oc), ct in report.items()]
     return jsonify({"report": out})
 
 # ─── Google OAuth Calendar Integration ───────────────────────────
@@ -156,6 +156,33 @@ def auth_google():
 
 @app.route('/oauth2callback', methods=['GET'])
 def oauth2callback():
+    try:
+        state = session.get('state'); user_id = session.get('user_id')
+        if not state or not user_id:
+            abort(400, 'OAuth session error')
+        flow = Flow.from_client_secrets_file(
+            SECRETS_FILE,
+            scopes=SCOPES,
+            state=state,
+            redirect_uri=REDIRECT_URI
+        )
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
+        tokens = load_tokens()
+        tokens[user_id] = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        }
+        save_tokens(tokens)
+        return jsonify({'status': 'connected', 'user_id': user_id})
+    except Exception as e:
+        import traceback
+        traceback_str = traceback.format_exc()
+        return jsonify({'error': 'oauth2callback_failed', 'message': str(e), 'trace': traceback_str}), 500
     state = session.get('state'); user_id = session.get('user_id')
     if not state or not user_id:
         abort(400, 'OAuth session error')
