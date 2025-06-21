@@ -157,7 +157,8 @@ def auth_google():
 @app.route('/oauth2callback', methods=['GET'])
 def oauth2callback():
     try:
-        state = session.get('state'); user_id = session.get('user_id')
+        state = session.get('state')
+        user_id = session.get('user_id')
         if not state or not user_id:
             abort(400, 'OAuth session error')
         flow = Flow.from_client_secrets_file(
@@ -179,6 +180,10 @@ def oauth2callback():
         }
         save_tokens(tokens)
         return jsonify({'status': 'connected', 'user_id': user_id})
+    except Exception as e:
+        import traceback
+        traceback_str = traceback.format_exc()
+        return jsonify({'error': 'oauth2callback_failed', 'message': str(e), 'trace': traceback_str}), 500
     except Exception as e:
         import traceback
         traceback_str = traceback.format_exc()
