@@ -76,7 +76,7 @@ def get_users():
     users = fub_get_paginated('users')
     return jsonify({"users": users})
 
-# ─── FUB Middleware Endpoints ───────────────────────────────────
+# ─── FUB Endpoints ─────────────────────────────────────────────
 @app.route('/get_contacts', methods=['GET'])
 def get_contacts():
     r = requests.get("https://api.followupboss.com/v1/people", auth=FUB_AUTH)
@@ -123,12 +123,9 @@ def get_appointments_report():
     return jsonify({"report": out})
 
 # ─── Google OAuth Calendar Integration ───────────────────────────
-# Redirect URI must exactly match the one configured in Google Cloud Console
 REDIRECT_URI = os.getenv('OAUTH_REDIRECT_URI')
 if not REDIRECT_URI:
-    raise RuntimeError("OAUTH_REDIRECT_URI environment variable not set; must match your OAuth client redirect URI")
-
-TOKENS_FILE = 'tokens.json'
+    raise RuntimeError("OAUTH_REDIRECT_URI not set; must match your OAuth client redirect URI")
 
 TOKENS_FILE = 'tokens.json'
 def load_tokens():
@@ -141,24 +138,25 @@ SECRETS_FILE = os.getenv('GOOGLE_CLIENT_SECRETS_FILE', 'credentials.json')
 
 @app.route('/auth/google', methods=['GET'])
 def auth_google():
-    user_id = request.args.get('user_id') or abort(400, 'Missing user_id')
-    flow = Flow.from_client_secrets_file(
-        SECRETS_FILE,
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI
-    )
-    auth_url, state = flow.authorization_url(prompt='consent')
-    session['state'] = state
-    session['user_id'] = user_id
-    return redirect(auth_url)
+    try:
+        user_id = request.args.get('user_id') or abort(400, 'Missing user_id')
+        flow = Flow.from_client_secrets_file(
+            SECRETS_FILE,
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI
+        )
+        auth_url, state = flow.authorization_url(prompt='consent')
+        session['state'] = state
+        session['user_id'] = user_id
+        return redirect(auth_url)
+    except Exception as e:
+        return jsonify({'error': 'auth_google_failed', 'message': str(e)}), 500
 
 @app.route('/oauth2callback', methods=['GET'])
 def oauth2callback():
-    state = session.get('state')
-    user_id = session.get('user_id')
+    state = session.get('state'); user_id = session.get('user_id')
     if not state or not user_id:
         abort(400, 'OAuth session error')
-    # Use the same redirect URI as auth step to avoid mismatch
     flow = Flow.from_client_secrets_file(
         SECRETS_FILE,
         scopes=SCOPES,
@@ -182,62 +180,57 @@ def oauth2callback():
 @app.route('/get_calendar_events', methods=['GET'])
 def get_calendar_events():
     user_id = request.args.get('user_id'); start = request.args.get('start'); end = request.args.get('end')
-    if not (user_id and start and end): abort(400, 'Require user_id, start, end')
-    tokens = load_tokens().get(user_id) or abort(404,'Not connected')
+    if not (user_id and start and end):
+        abort(400, 'Require user_id, start, end')
+    tokens = load_tokens().get(user_id) or abort(404, 'Not connected')
     creds = Credentials(**tokens)
     if creds.expired and creds.refresh_token:
-        creds.refresh(GoogleRequest()); tokens['token']=creds.token; save_tokens({user_id:tokens})
-    service = build('calendar','v3',credentials=creds)
+        creds.refresh(GoogleRequest()); tokens['token'] = creds.token; save_tokens(tokens)
+    service = build('calendar', 'v3', credentials=creds)
     events = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
     return jsonify({'calendarAppointments': events})
 
 @app.route('/get_all_calendar_events', methods=['GET'])
 def get_all_calendar_events():
-    start = request.args.get('start'); end = request.args.get('end') or abort(400,'Missing start/end')
-    tokens = load_tokens(); all_events=[]
-    for uid, tok in tokens.items():
+    start = request.args.get('start'); end = request.args.get('end') or abort(400, 'Missing start/end')
+    all_tokens = load_tokens(); all_events = []
+    for uid, tok in all_tokens.items():
         creds = Credentials(**tok)
         if creds.expired and creds.refresh_token:
-            creds.refresh(GoogleRequest()); tok['token']=creds.token; save_tokens(tokens)
-        service = build('calendar','v3',credentials=creds)
+            creds.refresh(GoogleRequest()); tok['token'] = creds.token; save_tokens(all_tokens)
+        service = build('calendar', 'v3', credentials=creds)
         items = service.events().list(calendarId='primary', timeMin=start, timeMax=end, singleEvents=True, orderBy='startTime').execute().get('items', [])
-        for e in items: e['fub_user_id']=uid; all_events.append(e)
+        for e in items:
+            e['fub_user_id'] = uid
+            all_events.append(e)
     return jsonify({'allCalendarAppointments': all_events})
 
-@app.route('/get_deals', methods=['GET'])
-def get_deals():
-    r = requests.get("https://api.followupboss.com/v1/deals", auth=FUB_AUTH); r.raise_for_status(); return jsonify(r.json())
-
-@app.route('/get_lead_sources', methods=['GET'])
-def get_lead_sources():
-    r = requests.get("https://api.followupboss.com/v1/people/sources", auth=FUB_AUTH); r.raise_for_status(); return jsonify(r.json())
-
-@app.route('/get_notes', methods=['GET'])
-def get_notes():
-    lead_id = request.args.get('lead_id') or abort(400,'Missing lead_id')
-    r = requests.get(f"https://api.followupboss.com/v1/people/{lead_id}/notes", auth=FUB_AUTH); r.raise_for_status(); return jsonify(r.json())
-
-@app.route('/get_events', methods=['GET'])
-def get_events():
-    r = requests.get("https://api.followupboss.com/v1/events", auth=FUB_AUTH, params={'start':request.args.get('start'),'end':request.args.get('end')}); r.raise_for_status(); return jsonify(r.json())
-
+# ─── Debug & Other Endpoints ────────────────────────────────────
 @app.route('/debug_token', methods=['GET'])
 def debug_token():
-    return jsonify({'loaded_token':FUB_API_KEY[:8]+'...', 'length':len(FUB_API_KEY)})
+    return jsonify({'loaded_token': FUB_API_KEY[:8]+'...', 'length': len(FUB_API_KEY)})
+
+@app.route('/debug_oauth', methods=['GET'])
+def debug_oauth():
+    return jsonify({
+        'OAUTH_REDIRECT_URI': REDIRECT_URI,
+        'GOOGLE_CLIENT_SECRETS_FILE': SECRETS_FILE,
+        'ENV_VARS': {
+            'FUB_API_KEY': bool(os.getenv('FUB_API_KEY')),
+            'FUB_APP_SECRET': bool(os.getenv('FUB_APP_SECRET')),
+            'FLASK_SECRET': bool(os.getenv('FLASK_SECRET'))
+        }
+    })
+
+@app.route('/dump_credentials', methods=['GET'])
+def dump_credentials():
+    try:
+        data = json.load(open(SECRETS_FILE))
+        return jsonify({'credentials': data})
+    except Exception as e:
+        return jsonify({'error': 'dump_failed', 'message': str(e)}), 500
 
 if __name__ == '__main__':
-    # Debug endpoints to verify environment
-    @app.route('/debug_oauth', methods=['GET'])
-    def debug_oauth():
-        return jsonify({
-            'OAUTH_REDIRECT_URI': REDIRECT_URI,
-            'GOOGLE_CLIENT_SECRETS_FILE': SECRETS_FILE,
-            'ENV_VARS': {
-                'FUB_API_KEY': bool(os.getenv('FUB_API_KEY')),
-                'FUB_APP_SECRET': bool(os.getenv('FUB_APP_SECRET')),
-                'FLASK_SECRET': bool(os.getenv('FLASK_SECRET'))
-            }
-        })
-
-    port = int(os.getenv('PORT',10000))
+    port = int(os.getenv('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
+```
