@@ -128,8 +128,10 @@ if not REDIRECT_URI:
     raise RuntimeError("OAUTH_REDIRECT_URI not set; must match your OAuth client redirect URI")
 
 TOKENS_FILE = 'tokens.json'
+
 def load_tokens():
     return json.load(open(TOKENS_FILE)) if os.path.exists(TOKENS_FILE) else {}
+
 def save_tokens(tokens):
     json.dump(tokens, open(TOKENS_FILE, 'w'))
 
@@ -233,4 +235,3 @@ def dump_credentials():
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
-```
